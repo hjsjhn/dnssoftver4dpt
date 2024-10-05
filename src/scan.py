@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import multiprocessing
-import build_models
+from . import build_models
 import collections
-import testcases
+from . import testcases
 import ipaddress
 import itertools
 import argparse
