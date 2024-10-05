@@ -1,0 +1,1 @@
+from .src.scan import scan_ip_once
