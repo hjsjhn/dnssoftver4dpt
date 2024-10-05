@@ -33,6 +33,15 @@ def get_work_dir():
     """Find the path to the project's work directory"""
 
     return os.path.split(os.path.split(os.path.abspath(__file__))[0])[0]
+    
+# Ignore some of the Pandas warnings
+warnings.simplefilter(action="ignore", category=pandas.errors.PerformanceWarning)
+
+# Get the working directory
+work_dir = get_work_dir()
+
+# Configure logging
+logging.basicConfig(filename=f"{work_dir}/dnssoftver.log", level=logging.WARNING, format='%(asctime)s %(name)s %(processName)s %(threadName)s %(levelname)s:%(message)s')
 
 
 def load_model(model_file):
@@ -140,6 +149,41 @@ def build_decision_tree(granularity):
     tree = build_models.create_model(data=input_data_df, testcase_file=None, print_stats=False)
 
     return tree
+
+def scan_ip_once(ip, granularity):
+
+    # Build the decision tree
+    decision_tree = build_decision_tree(granularity=granularity)
+
+    # Get the names of the testcases that were used to build the tree
+    testcase_names = get_testcases(filename=f"{work_dir}/data/queries/queries_{granularity}.txt")
+
+    # We process the input file in chunks
+    # Ensure that the entry is a valid IP address
+    ip = ip.strip()
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError as e:
+        logging.warning(e)
+        return []
+
+    # Prepare the tuple of IP to scan and testcases to issue
+    targets = [(ip, testcase_names)]
+    # Execute important testcases only
+    results = execute_queries(ip, testcase_names)
+    # Group the results obtained above by IP address
+    results_chunk = collections.defaultdict(dict)
+    for testcase in results:
+        results_chunk[testcase["ip"]][testcase["query_name"]] = testcase["signature"]
+    # Prepare the query results to be consumed by a model
+    df_results_chunk = get_model_data(data_input=results_chunk, model=decision_tree)
+    # Classify
+    df_results_chunk_test = df_results_chunk.loc[:, df_results_chunk.columns != 'ip']
+    # Columns in train and test datasets must be in the same order
+    df_results_chunk_test = df_results_chunk_test[decision_tree.feature_names_in_]
+    df_results_chunk_pred = decision_tree.predict(df_results_chunk_test)
+    # Return the result as a list of versions
+    return df_results_chunk_pred.tolist()
 
 
 if __name__ == '__main__':
